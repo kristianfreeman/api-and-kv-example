@@ -1,32 +1,23 @@
-/**
- * Welcome to Cloudflare Workers! This is your first worker.
- *
- * - Run `npm run dev` in your terminal to start a development server
- * - Open a browser tab at http://localhost:8787/ to see your worker in action
- * - Run `npm run deploy` to publish your worker
- *
- * Learn more at https://developers.cloudflare.com/workers/
- */
+import { Hono } from "hono";
+type Bindings = { KV: KVNamespace };
+const app = new Hono<{ Bindings: Bindings }>();
 
-export interface Env {
-	// Example binding to KV. Learn more at https://developers.cloudflare.com/workers/runtime-apis/kv/
-	// MY_KV_NAMESPACE: KVNamespace;
-	//
-	// Example binding to Durable Object. Learn more at https://developers.cloudflare.com/workers/runtime-apis/durable-objects/
-	// MY_DURABLE_OBJECT: DurableObjectNamespace;
-	//
-	// Example binding to R2. Learn more at https://developers.cloudflare.com/workers/runtime-apis/r2/
-	// MY_BUCKET: R2Bucket;
-	//
-	// Example binding to a Service. Learn more at https://developers.cloudflare.com/workers/runtime-apis/service-bindings/
-	// MY_SERVICE: Fetcher;
-	//
-	// Example binding to a Queue. Learn more at https://developers.cloudflare.com/queues/javascript-apis/
-	// MY_QUEUE: Queue;
-}
+app.get("/repos/:username", async (c) => {
+	const username = c.req.param("username");
+	const cached = await c.env.KV.get(`repos:${username}`, "json")
 
-export default {
-	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-		return new Response('Hello World!');
-	},
-};
+	if (cached) {
+		return c.json(cached)
+	} else {
+	  const resp = await fetch(`https://api.github.com/users/${username}/repos`, {
+	    headers: {
+	      "User-Agent": "CF Workers",
+	  	},
+    })
+	  const data = await resp.json();
+		await c.env.KV.put(`repos:${username}`, JSON.stringify(data), { expirationTtl: 60 })
+	  return c.json(data);
+	}
+})
+
+export default app;
